@@ -2,6 +2,7 @@
 // ==========================================
 // 1. СЕРВЕРНА ОБРОБКА ТА ВАЛІДАЦІЯ (PHP)
 // ==========================================
+
 ini_set('display_errors', 0);
 error_reporting(E_ALL);
 
@@ -9,104 +10,152 @@ $errors = [];
 $successMessage = "";
 
 if ($_SERVER["REQUEST_METHOD"] === "POST") {
-    
-    // --- ЗАХИСТ ВІД СПАМУ БЕЗ КАПЧІ ---
+
+    // --- ЗАХИСТ ВІД СПАМУ ---
     if (!empty($_POST['website_hp'])) {
-        die("Спам заблоковано!"); 
+        die("Спам заблоковано!");
     }
 
     $formTime = isset($_POST['form_time']) ? (int)$_POST['form_time'] : 0;
+
     if ((time() - $formTime) < 3) {
-        die("Спам заблоковано! Форма заповнена занадто швидко.");
+        die("Спам заблоковано! Занадто швидко.");
     }
 
-    // --- ОСНОВНА ВАЛІДАЦІЯ ДАНИХ ---
-    $name = trim($_POST['name'] ?? '');
-    $phone = trim($_POST['phone'] ?? '');
+    // --- ОЧИЩЕННЯ ПОЛІВ ---
+    $fName    = trim($_POST['fName'] ?? '');
+    $lName    = trim($_POST['lName'] ?? '');
+    $phone    = trim($_POST['phone'] ?? '');
+    $email    = trim($_POST['email'] ?? '');
+    $comment  = trim($_POST['comment'] ?? '');
+    $shipping = trim($_POST['shipping_method'] ?? 'novaposhta');
 
-    if (empty($name)) {
-        $errors['name'] = "Ім'я обов'язкове для заповнення.";
-    } elseif (!preg_match("/^[a-zA-Zа-яА-ЯіІїЇєЄґҐ\s]+$/u", $name)) {
-        $errors['name'] = "Ім'я повинно містити лише літери.";
+    // --- ВАЛІДАЦІЯ ІМЕНІ ---
+    if (empty($fName)) {
+        $errors['fName'] = "Введіть ім'я.";
+    } elseif (!preg_match("/^[a-zA-Zа-яА-ЯіІїЇєЄґҐ\s]+$/u", $fName)) {
+        $errors['fName'] = "Ім'я повинно містити лише літери.";
     }
 
-    $cleanPhone = preg_replace('/\D/', '', $phone);
-    $ukrainianCodes = ['39', '50', '63', '66', '67', '68', '73', '91', '92', '93', '94', '95', '96', '97', '98', '99'];
-    $operatorCode = substr($cleanPhone, 3, 2);
-
-    if (empty($phone)) {
-        $errors['phone'] = "Телефон обов'язковий для заповнення.";
-    } elseif (strlen($cleanPhone) !== 12 || strpos($cleanPhone, '380') !== 0) {
-        $errors['phone'] = "Некоректний формат номера. Формат: +38 (0XX) XXX-XX-XX.";
-    } elseif (!in_array($operatorCode, $ukrainianCodes)) {
-        $errors['phone'] = "Невідомий код оператора України.";
+    // --- ВАЛІДАЦІЯ ПРІЗВИЩА ---
+    if (empty($lName)) {
+        $errors['lName'] = "Введіть прізвище.";
+    } elseif (!preg_match("/^[a-zA-Zа-яА-ЯіІїЇєЄґҐ\s]+$/u", $lName)) {
+        $errors['lName'] = "Прізвище повинно містити лише літери.";
     }
 
-    // --- НАСКРІЗНА ІНТЕГРАЦІЯ (ЯКЩО НЕМАЄ ПОМИЛОК) ---
+ $cleanPhone = preg_replace('/\D/', '', $phone);
+
+// якщо номер починається з 0 → додаємо 38
+if (strlen($cleanPhone) == 10 && strpos($cleanPhone, '0') === 0) {
+    $cleanPhone = '38' . $cleanPhone;
+}
+
+$ukrainianCodes = [
+    '39', '50', '63', '66', '67',
+    '68', '73', '91', '92', '93',
+    '94', '95', '96', '97', '98', '99'
+];
+
+// беремо код оператора
+$operatorCode = substr($cleanPhone, 3, 2);
+
+if (empty($phone)) {
+
+    $errors['phone'] = "Телефон обов'язковий.";
+
+} elseif (strlen($cleanPhone) !== 12 || strpos($cleanPhone, '380') !== 0) {
+
+    $errors['phone'] = "Некоректний формат номера.";
+
+} elseif (!in_array($operatorCode, $ukrainianCodes)) {
+
+    $errors['phone'] = "Невідомий код оператора.";
+
+}
+
+    // ==========================================
+    // ВІДПРАВКА В SALESDRIVE
+    // ==========================================
+
     if (empty($errors)) {
-        
-        // -------------------------------------------------------------
-        // КРОК 1: НАДІСЛАННЯ ДАНИХ З ФОРМИ ДО SALESDRIVE
-        // -------------------------------------------------------------
-        $salesDriveKey = "BKUXrsK3s74q6GfSj01OitC_5i6E2oWoNpJSzkxLRKiAq_FXrCb8iLOr7r9teglu3t30VV-2mTbrK2jIUrj1fDrz6k8nYXsQT8rX"; 
-        $urlSalesDrive = "https://salesdrive.ua";
+
+        $salesDriveKey = "8rkaXBsDKxywO1kYC880uZsH3gtelx7Jgx39Q4HOWiQ2QgZHMy9gmkNpdHSK4zSJxisB6xIBS00d8PuHCpytxk2fxm1DSXlGnV1A";
+
+        $urlSalesDrive = "https://mickrogreen.salesdrive.me/handler/";
 
         $dataSalesDrive = [
-            'form'        => $salesDriveKey,
-            'f_name'      => $name,
-            'phone'       => $phone,
-            'external_id' => 'Локальний сервер (Ланцюжок)'
+            'form'            => $salesDriveKey,
+            'f_name'          => $fName,
+            'l_name'          => $lName,
+            'phone'           => $cleanPhone,
+            'email'           => $email,
+            'shipping_method' => $shipping,
+            'comment'         => $comment,
+            'company'         => 'Мікрогрін ЛТД'
         ];
 
-        $ch1 = curl_init($urlSalesDrive);
-        curl_setopt($ch1, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch1, CURLOPT_POST, true);
-        curl_setopt($ch1, CURLOPT_FOLLOWLOCATION, true); 
-        curl_setopt($ch1, CURLOPT_POSTFIELDS, http_build_query($dataSalesDrive)); 
-        curl_setopt($ch1, CURLOPT_TIMEOUT, 10);
-        
-        $resSalesDrive = curl_exec($ch1);
-        $codeSalesDrive = curl_getinfo($ch1, CURLINFO_HTTP_CODE);
-        curl_close($ch1);
+        $ch = curl_init($urlSalesDrive);
 
-        // -------------------------------------------------------------
-        // КРОК 2: ПЕРЕДАЧА ДАНИХ ДАЛІ В ДІЛОВОД (ЗА ПОДІЄЮ УСПІХУ SALESDRIVE)
-        // -------------------------------------------------------------
-        if ($codeSalesDrive === 200 || $codeSalesDrive === 302) {
-            
-            // ВСТАВТЕ СВІЙ API-КЛЮЧ З ДІЛОВОД ТУТ:
-            $dilovodApiKey = "Bz5z11E9s2GSKKOuhXBH5vCs9L2Q43"; 
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 
-            $urlDilovod = "https://dilovod.ua";
+        curl_setopt($ch, CURLOPT_POST, true);
 
-            // Формуємо чисту картку клієнта без прив'язки до папки
-            $dataDilovod = [
-                "name"    => $name,
-                "phone"   => $phone,
-                "comment" => "Наскрізна інтеграція: Передано далі за подією створення в SalesDrive"
-            ];
+        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
 
-            $ch2 = curl_init($urlDilovod);
-            curl_setopt($ch2, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch2, CURLOPT_POST, true);
-            curl_setopt($ch2, CURLOPT_POSTFIELDS, json_encode($dataDilovod));
-            curl_setopt($ch2, CURLOPT_HTTPHEADER, [
-                'Content-Type: application/json',
-                'X-API-Key: ' . $dilovodApiKey
-            ]);
-            
-            $resDilovod = curl_exec($ch2);
-            $codeDilovod = curl_getinfo($ch2, CURLINFO_HTTP_CODE);
-            curl_close($ch2);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($dataSalesDrive));
 
-            // Виводимо повідомлення про успішне виконання всього ланцюжка
-            $successMessage = "Форму успішно відправлено! Заявка створена в SalesDrive та передана далі в Діловод.";
-            
-            // Очищуємо поля форми для нового заповнення
-            $_POST['name'] = '';
-            $_POST['phone'] = '';
+        curl_setopt($ch, CURLOPT_TIMEOUT, 15);
+
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            'Content-Type: application/json'
+        ]);
+
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+
+        $response = curl_exec($ch);
+
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+
+        curl_close($ch);
+
+        $responseObj = json_decode($response, true);
+
+        $orderId = null;
+
+        if (isset($responseObj['data']['orderId'])) {
+
+            $orderId = $responseObj['data']['orderId'];
+
+        } elseif (isset($responseObj['id'])) {
+
+            $orderId = $responseObj['id'];
+
+        }
+
+        if (
+            $httpCode === 200 ||
+            $httpCode === 201 ||
+            (isset($responseObj['success']) && $responseObj['success'] == true)
+        ) {
+
+            if ($orderId) {
+
+                $successMessage = "Успішно! Заявка створена №" . $orderId;
+
+            } else {
+
+                $successMessage = "Успішно! Заявка створена.";
+
+            }
+
+            $_POST = [];
+
         } else {
-            $errors['name'] = "Помилка першого кроку (CRM). Ланцюжок передачі розірвано.";
+
+            $errors['server'] = "Помилка CRM (Код: " . $httpCode . ")";
+
         }
     }
 }
@@ -115,85 +164,246 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 <!DOCTYPE html>
 <html lang="uk">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Наскрізна інтеграція: Форма -> SalesDrive -> Діловод</title>
-    <style>
-        body { font-family: 'Segoe UI', Arial, sans-serif; background-color: #f4f7f6; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-        .form-container { background: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); width: 100%; max-width: 400px; }
-        h2 { margin-top: 0; color: #333; text-align: center; }
-        .form-group { margin-bottom: 20px; position: relative; }
-        label { display: block; margin-bottom: 8px; font-weight: 600; color: #555; }
-        input[type="text"] { width: 100%; padding: 12px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; font-size: 16px; transition: border-color 0.3s; }
-        input[type="text"]:focus { border-color: #4a90e2; outline: none; }
-        .error-text { color: #e74c3c; font-size: 13px; margin-top: 5px; display: block; }
-        .success-box { background: #2ecc71; color: white; padding: 15px; border-radius: 4px; text-align: center; margin-bottom: 20px; }
-        button { width: 100%; padding: 12px; background: #4a90e2; border: none; color: white; font-size: 16px; border-radius: 4px; cursor: pointer; font-weight: bold; transition: background 0.3s; }
-        button:hover { background: #357abd; }
-        .hidden-field { display: none !important; visibility: hidden !important; }
-    </style>
+
+<meta charset="UTF-8">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>Форма замовлення</title>
+
+<style>
+
+body{
+    font-family: Arial, sans-serif;
+    background:#f5f5f5;
+    margin:0;
+    padding:0;
+}
+
+.form-container{
+    width:450px;
+    max-width:95%;
+    margin:30px auto;
+    background:white;
+    padding:30px;
+    border-radius:10px;
+    box-shadow:0 0 10px rgba(0,0,0,0.1);
+}
+
+h2{
+    text-align:center;
+    margin-bottom:20px;
+}
+
+label{
+    display:block;
+    margin-bottom:5px;
+    font-weight:bold;
+}
+
+input,
+textarea,
+select{
+    width:100%;
+    padding:12px;
+    margin-bottom:15px;
+    box-sizing:border-box;
+    border:1px solid #ccc;
+    border-radius:5px;
+    font-size:16px;
+}
+
+button{
+    width:100%;
+    padding:14px;
+    background:#0077ff;
+    color:white;
+    border:none;
+    border-radius:5px;
+    cursor:pointer;
+    font-size:16px;
+    font-weight:bold;
+}
+
+button:hover{
+    background:#005fd1;
+}
+
+.error{
+    color:red;
+    margin-bottom:15px;
+    font-size:14px;
+}
+
+.success{
+    color:green;
+    margin-bottom:15px;
+    padding:15px;
+    background:#e2f5ea;
+    border:1px solid #a3e0be;
+    border-radius:5px;
+}
+
+.hidden-field{
+    display:none;
+}
+
+</style>
+
 </head>
 <body>
 
 <div class="form-container">
-    <h2>Наскрізна інтеграція</h2>
 
-    <?php if (!empty($successMessage)): ?>
-        <div class="success-box"><?= $successMessage ?></div>
-    <?php endif; ?>
+<h2>Оформлення замовлення</h2>
 
-    <form action="" method="POST" id="customForm">
-        <div class="hidden-field">
-            <input type="text" name="website_hp" autocomplete="off">
-        </div>
-        <input type="hidden" name="form_time" value="<?= time() ?>">
+<?php if(!empty($successMessage)): ?>
+<div class="success">
+    <?= $successMessage ?>
+</div>
+<?php endif; ?>
 
-        <div class="form-group">
-            <label for="name">Ваше ім'я</label>
-            <input type="text" id="name" name="name" placeholder="Тільки літери" value="<?= htmlspecialchars($_POST['name'] ?? '') ?>">
-            <span class="error-text" id="nameError"><?= $errors['name'] ?? '' ?></span>
-        </div>
+<?php if(isset($errors['server'])): ?>
+<div class="error">
+    <?= $errors['server'] ?>
+</div>
+<?php endif; ?>
 
-        <div class="form-group">
-            <label for="phone">Номер телефону</label>
-            <input type="text" id="phone" name="phone" placeholder="+38 (0XX) XXX-XX-XX" value="<?= htmlspecialchars($_POST['phone'] ?? '') ?>">
-            <span class="error-text" id="phoneError"><?= $errors['phone'] ?? '' ?></span>
-        </div>
+<form method="POST">
 
-        <button type="submit">Надіслати дані</button>
-    </form>
+<div class="hidden-field">
+    <input type="text" name="website_hp">
+</div>
+
+<input type="hidden" name="form_time" value="<?= time() ?>">
+
+<label for="lName">Прізвище *</label>
+
+<input
+    type="text"
+    id="lName"
+    name="lName"
+    placeholder="Шевчук"
+    value="<?= htmlspecialchars($_POST['lName'] ?? '') ?>"
+>
+
+<?php if(isset($errors['lName'])): ?>
+<div class="error"><?= $errors['lName'] ?></div>
+<?php endif; ?>
+
+<label for="fName">Ім'я *</label>
+
+<input
+    type="text"
+    id="fName"
+    name="fName"
+    placeholder="Петро"
+    value="<?= htmlspecialchars($_POST['fName'] ?? '') ?>"
+>
+
+<?php if(isset($errors['fName'])): ?>
+<div class="error"><?= $errors['fName'] ?></div>
+<?php endif; ?>
+
+<label for="phone">Телефон *</label>
+
+<input
+    type="text"
+    id="phone"
+    name="phone"
+    placeholder="+38 (099) 123-45-67"
+    value="<?= htmlspecialchars($_POST['phone'] ?? '') ?>"
+>
+
+<?php if(isset($errors['phone'])): ?>
+<div class="error"><?= $errors['phone'] ?></div>
+<?php endif; ?>
+
+<label for="email">Email</label>
+
+<input
+    type="email"
+    id="email"
+    name="email"
+    placeholder="user@example.com"
+    value="<?= htmlspecialchars($_POST['email'] ?? '') ?>"
+>
+
+<label for="shipping_method">Доставка</label>
+
+<select id="shipping_method" name="shipping_method">
+
+    <option value="novaposhta">
+        Nova Poshta
+    </option>
+
+    <option value="ukrposhta">
+        Укрпошта
+    </option>
+
+    <option value="meest">
+        Meest Express
+    </option>
+
+</select>
+
+<label for="comment">Коментар</label>
+
+<textarea
+    id="comment"
+    name="comment"
+    rows="3"
+    placeholder="Ваш коментар..."
+><?= htmlspecialchars($_POST['comment'] ?? '') ?></textarea>
+
+<button type="submit">
+    Підтвердити замовлення
+</button>
+
+</form>
+
 </div>
 
 <script>
-document.addEventListener("DOMContentLoaded", function() {
-    const nameInput = document.getElementById("name");
-    const phoneInput = document.getElementById("phone");
-    const form = document.getElementById("customForm");
 
-    if (!form) return;
+const phoneInput = document.getElementById('phone');
 
-    phoneInput.addEventListener("input", function(e) {
-        let matrix = "+38 (0__) ___-__-__", i = 0,
-            def = matrix.replace(/\D/g, ""), val = this.value.replace(/\D/g, "");
-        if (def.length >= val.length) val = def;
-        this.value = matrix.replace(/./g, function(a) {
-            return /[_\d]/.test(a) && i < val.length ? val.charAt(i++) : i >= val.length ? "" : a;
-        });
-    });
+phoneInput.addEventListener('input', function () {
 
-    phoneInput.addEventListener("focus", function() { if (this.value === "") this.value = "+38 (0"; });
-    nameInput.addEventListener("input", function() { this.value = this.value.replace(/[^a-zA-Zа-яА-ЯіІїЇєЄґҐ\s]/g, ""); });
+    let x = this.value.replace(/\D/g, '');
 
-    form.addEventListener("submit", function(e) {
-        let hasErrors = false;
-        document.getElementById("nameError").innerText = "";
-        document.getElementById("phoneError").innerText = "";
-        if (nameInput.value.trim().length < 2) { document.getElementById("nameError").innerText = "Ім'я занадто коротке."; hasErrors = true; }
-        if (phoneInput.value.length < 19) { document.getElementById("phoneError").innerText = "Введіть номер повністю."; hasErrors = true; }
-        if (hasErrors) e.preventDefault();
-    });
+    if (x.startsWith('380')) {
+        x = x.substring(2);
+    }
+
+    if (!x.startsWith('0')) {
+        x = '0' + x;
+    }
+
+    x = x.substring(0, 10);
+
+    let formatted = '+38';
+
+    if (x.length > 0) {
+        formatted += ' (' + x.substring(0, 3);
+    }
+
+    if (x.length >= 4) {
+        formatted += ') ' + x.substring(3, 6);
+    }
+
+    if (x.length >= 7) {
+        formatted += '-' + x.substring(6, 8);
+    }
+
+    if (x.length >= 9) {
+        formatted += '-' + x.substring(8, 10);
+    }
+
+    this.value = formatted;
 });
+
 </script>
+
 </body>
 </html>
-
